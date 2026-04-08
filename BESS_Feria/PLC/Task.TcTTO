@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <Task Name="Task" Id="{8b956826-d6a3-40e3-9c34-b868a17c61e9}">
+    <!--CycleTime in micro seconds.-->
+    <CycleTime>10000</CycleTime>
+    <Priority>1</Priority>
+    <PouCall>
+      <Name>P_TestModuleLEDs</Name>
+    </PouCall>
+    <TaskFBGuid>{030580a5-96e9-4ed0-bd44-a6d6298756af}</TaskFBGuid>
+    <Fb_init>{7b87fe9f-e104-4387-b35f-7fda7688d560}</Fb_init>
+    <Fb_exit>{74b8ca65-7979-44c8-861c-975b75aafedb}</Fb_exit>
+    <CycleUpdate>{ac93ce10-f1b7-4f45-964e-68b705ae212f}</CycleUpdate>
+    <PostCycleUpdate>{d4ef34be-f831-4bf1-9c7d-8aeb9f38e4a4}</PostCycleUpdate>
+  </Task>
+</TcPlcObject>

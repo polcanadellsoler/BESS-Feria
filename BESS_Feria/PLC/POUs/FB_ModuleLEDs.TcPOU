@@ -1,0 +1,256 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="FB_ModuleLEDs" Id="{3fce0c44-0e70-425a-9d59-f7363fc6da02}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ModuleLEDs
+VAR_INPUT
+	eStateLeds : ENUM_InternalControl_StateMachine; // Input state as a word like 'init', 'standby', etc.
+END_VAR
+
+VAR
+    nLEDsQuantity : INT := 50;
+    fbEL6851Communication   : FB_EL6851Communication;
+    
+    // Charge effect variables (moved from method to FB level)
+    nChargePosition     : INT := 0;
+    nChargeCounter      : INT := 0;
+    bChargeInitialized  : BOOL := FALSE;
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Keep DMX comunication alive
+M_DMXComunication(bEL6851CommunicationEnable := TRUE);
+
+// State machine: set state based on colorMode input
+IF eStateLeds = ENUM_InternalControl_StateMachine.READY THEN
+	M_StaticColorFunction(byRed := 0, byGreen := 0, byBlue :=255);
+	
+ELSIF eStateLeds = ENUM_InternalControl_StateMachine.STANDBY THEN
+	M_BreathingColorFunction(byRed := 255, byGreen := 30, byBlue :=0, byStepSize :=1);
+	
+ELSIF eStateLeds = ENUM_InternalControl_StateMachine.RUN THEN
+	M_ChargeEffect(byStaticLEDs := 27, byRed := 0, byGreen := 255, byBlue := 0);
+
+ELSIF eStateLeds = ENUM_InternalControl_StateMachine.FAULT THEN
+	M_BreathingColorFunction(byRed := 255, byGreen := 0, byBlue :=0, byStepSize :=1);
+	
+ELSE
+    M_BreathingColorFunction(byRed := 255, byGreen := 30, byBlue :=0, byStepSize :=1);
+	
+END_IF
+]]></ST>
+    </Implementation>
+    <Method Name="M_BreathingColorFunction" Id="{1d5202bf-e1dd-42f1-973a-2db27d57011a}">
+      <Declaration><![CDATA[METHOD PRIVATE M_BreathingColorFunction : BOOL
+VAR_INPUT
+    byRed         : BYTE; // Red (0-255)
+    byGreen       : BYTE; // Green (0-255)
+    byBlue        : BYTE; // Blue (0-255)
+    byStepSize    : BYTE; // Stepsize for brightness change minimum 1
+END_VAR
+
+VAR_INST
+    byStatBrightness  : BYTE := 0;
+    bStatDirectionUp  : BOOL := TRUE;
+END_VAR
+
+VAR
+    dni                : DINT;
+    dnChannelBase      : DINT;
+    byActualRed        : BYTE;
+    byActualGreen      : BYTE;
+    byActualBlue       : BYTE;
+    iClearIdx          : INT;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR iClearIdx := 1 TO 512 DO
+    GVL_DMX.arrDMXProcessData[iClearIdx] := 0;
+END_FOR;
+
+IF bStatDirectionUp THEN
+    IF byStatBrightness > (255 - byStepSize) THEN
+        byStatBrightness := 255;
+        bStatDirectionUp := FALSE;
+    ELSE
+        byStatBrightness := byStatBrightness + byStepSize;
+    END_IF
+ELSE
+    IF byStatBrightness < byStepSize THEN
+        byStatBrightness := 0;
+        bStatDirectionUp := TRUE;
+    ELSE
+        byStatBrightness := byStatBrightness - byStepSize;
+    END_IF
+END_IF
+
+byActualRed   := TO_BYTE( (TO_UDINT(byRed)   * TO_UDINT(byStatBrightness)) / 255 );
+byActualGreen := TO_BYTE( (TO_UDINT(byGreen) * TO_UDINT(byStatBrightness)) / 255 );
+byActualBlue  := TO_BYTE( (TO_UDINT(byBlue)  * TO_UDINT(byStatBrightness)) / 255 );
+
+FOR dni := 1 TO nLEDsQuantity DO
+    dnChannelBase := (dni - 1) * 3 + 1;
+    
+    IF (dnChannelBase + 2) <= 512 THEN  // Changed from UPPER_BOUND to explicit 512 check
+        GVL_DMX.arrDMXProcessData[dnChannelBase]     := byActualRed;
+        GVL_DMX.arrDMXProcessData[dnChannelBase + 1] := byActualGreen;
+        GVL_DMX.arrDMXProcessData[dnChannelBase + 2] := byActualBlue;
+    ELSE
+        M_BreathingColorFunction := FALSE;
+        RETURN;
+    END_IF
+END_FOR
+
+M_BreathingColorFunction := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ChargeEffect" Id="{db88829e-e285-4156-968b-4e0585aaf266}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ChargeEffect : BOOL
+VAR_INPUT
+    byStaticLEDs    : BYTE;
+    byRed           : BYTE;
+    byGreen         : BYTE;
+    byBlue          : BYTE;
+END_VAR
+
+VAR_INST
+    nDropletPosition    : INT;
+    nCounter            : INT := 0;
+    bInitialized        : BOOL := FALSE;
+END_VAR
+
+VAR
+    dni                 : DINT;
+    dnChannelBase       : DINT;
+    nOffStart           : INT;
+    byBrightness        : BYTE;
+    nDistance           : INT;
+    nCurrentLED         : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[nOffStart := TO_INT(byStaticLEDs);
+
+// Initialize droplet at the END of the strip
+IF NOT bInitialized THEN
+    nDropletPosition := (nLEDsQuantity - nOffStart - 1);
+    bInitialized := TRUE;
+END_IF
+
+// Move droplet every 15 cycles BACKWARDS (towards static LEDs)
+nCounter := nCounter + 1;
+IF nCounter >= 10 THEN
+    nCounter := 0;
+    nDropletPosition := nDropletPosition - 1;  // REVERSED: subtract instead of add
+    
+    // Loop back to end when reaching static LEDs
+    IF nDropletPosition < 0 THEN
+        nDropletPosition := (nLEDsQuantity - nOffStart - 1);
+    END_IF
+END_IF
+
+// Set LED colors with smooth trail
+FOR dni := 1 TO nLEDsQuantity DO
+    dnChannelBase := (dni - 1) * 3 + 1;
+    
+    IF (dnChannelBase + 2) <= UPPER_BOUND(GVL_DMX.arrDMXProcessData, 1) THEN
+        
+        // Static LEDs (always ON)
+        IF dni <= TO_DINT(byStaticLEDs) THEN
+            byBrightness := 255;
+        
+        // Moving droplet with trail in OFF section
+        ELSIF dni > TO_DINT(byStaticLEDs) THEN
+            nCurrentLED := TO_INT(dni) - nOffStart;
+            nDistance := nCurrentLED - nDropletPosition;
+            
+            // Main droplet
+            IF nDistance = 0 THEN
+                byBrightness := 255;
+            
+            // Trail AHEAD of droplet (moving towards static LEDs)
+            ELSIF nDistance = 1 THEN
+                byBrightness := 180;  // 70% brightness
+            ELSIF nDistance = 2 THEN
+                byBrightness := 100;  // 40% brightness
+            ELSIF nDistance = 3 THEN
+                byBrightness := 40;   // 15% brightness
+            
+            // All others OFF
+            ELSE
+                byBrightness := 0;
+            END_IF
+        
+        ELSE
+            byBrightness := 0;
+        END_IF
+        
+        // Apply brightness to color
+        GVL_DMX.arrDMXProcessData[dnChannelBase]     := TO_BYTE((TO_UDINT(byRed) * TO_UDINT(byBrightness)) / 255);
+        GVL_DMX.arrDMXProcessData[dnChannelBase + 1] := TO_BYTE((TO_UDINT(byGreen) * TO_UDINT(byBrightness)) / 255);
+        GVL_DMX.arrDMXProcessData[dnChannelBase + 2] := TO_BYTE((TO_UDINT(byBlue) * TO_UDINT(byBrightness)) / 255);
+        
+    ELSE
+        M_ChargeEffect := FALSE;
+        RETURN;
+    END_IF
+END_FOR
+
+M_ChargeEffect := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_DMXComunication" Id="{4a504c70-fb63-4117-8ea5-1f83f5b65548}">
+      <Declaration><![CDATA[METHOD PRIVATE M_DMXComunication : BOOL
+VAR_INPUT
+	bEL6851CommunicationEnable : BOOL := FALSE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// DMX communication
+IF bEL6851CommunicationEnable = TRUE THEN
+	fbEL6851Communication(
+		wSourceManufacturerID := 16#42_41,
+		dwSourceDeviceID := 16#12_13_14_15,
+		bEnableSendingData := TRUE,
+		bSetCycleMode := TRUE,
+		bSendDefaultData := FALSE,
+		uiDataLength := 512,
+		dwOptions := 0,
+		stEL6851InData := GVL_DMX.stDMXInDataLine01,
+		stEL6851OutData := GVL_DMX.stDMXOutDataLine01,
+		stCommandBuffer := GVL_DMX.stCommandBuffer01,
+		arrProcessData := GVL_DMX.arrDMXProcessData
+	);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_StaticColorFunction" Id="{e9a0a7b5-685e-41a0-b0f1-25f37e8b0079}">
+      <Declaration><![CDATA[METHOD PRIVATE M_StaticColorFunction : BOOL
+
+VAR_INPUT
+    byRed               : BYTE; // Red (0-255)
+    byGreen             : BYTE; // Green (0-255)
+    byBlue              : BYTE; // Blue (0-255)
+END_VAR
+
+VAR
+	dni                   : DINT;       // Loop variable
+    dnChannelBase        : DINT;       // Base channel for each LED
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR dni := 1 TO nLEDsQuantity DO
+    dnChannelBase := (dni - 1) * 3 + 1; // Calculate base channel for this LED (R channel)
+    IF (dnChannelBase + 2) <= UPPER_BOUND(GVL_DMX.arrDMXProcessData, 1) THEN // Verify we're not exceeding the DMX array bounds
+            GVL_DMX.arrDMXProcessData[dnChannelBase]     := byRed;
+            GVL_DMX.arrDMXProcessData[dnChannelBase + 1] := byGreen;
+            GVL_DMX.arrDMXProcessData[dnChannelBase + 2] := byBlue;
+    END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

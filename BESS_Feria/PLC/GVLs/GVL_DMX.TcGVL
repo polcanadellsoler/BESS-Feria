@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <GVL Name="GVL_DMX" Id="{7ac7761d-adbc-455f-a368-7924824efe7a}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	stDMXInDataLine01               AT %I*	:	ST_EL6851InData;
+	stDMXOutDataLine01              AT %Q*	:	ST_EL6851OutData;
+	stCommandBuffer01						:	ST_DMXCommandBuffer;
+	arrDMXProcessData						:	ARRAY [1..512] OF BYTE;
+	HMI_State : ENUM_InternalControl_StateMachine := ENUM_InternalControl_StateMachine.STANDBY;       // 0=INIT, 1=STANDBY, 2=RUN (charge)
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="P_TestModuleLEDs" Id="{aaa0e4f1-d42a-421c-a9d1-03a1eb05070c}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM P_TestModuleLEDs
+VAR
+    LEDsRGBColor : FB_ModuleLEDs();
+	State		 : ENUM_InternalControl_StateMachine := ENUM_InternalControl_StateMachine.STANDBY;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF GVL_DMX.HMI_State = ENUM_InternalControl_StateMachine.STANDBY THEN
+	LEDsRGBColor(eStateLeds := ENUM_InternalControl_StateMachine.STANDBY);
+
+ELSIF GVL_DMX.HMI_State = ENUM_InternalControl_StateMachine.READY THEN
+	LEDsRGBColor(eStateLeds := ENUM_InternalControl_StateMachine.READY);
+
+ELSIF GVL_DMX.HMI_State = ENUM_InternalControl_StateMachine.RUN THEN
+	LEDsRGBColor(eStateLeds := ENUM_InternalControl_StateMachine.RUN);
+
+ELSIF GVL_DMX.HMI_State = ENUM_InternalControl_StateMachine.FAULT THEN
+	LEDsRGBColor(eStateLeds := ENUM_InternalControl_StateMachine.FAULT);
+	
+ELSE
+	LEDsRGBColor(eStateLeds := ENUM_InternalControl_StateMachine.STANDBY);
+	
+END_IF
+
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>
